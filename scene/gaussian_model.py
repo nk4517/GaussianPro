@@ -11,7 +11,7 @@
 
 import torch
 import numpy as np
-from utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_rotation
+from utils.general_utils import inverse_sigmoid, get_expon_lr_func, build_rotation, build_scaling
 from torch import nn
 import os
 from utils.system_utils import mkdir_p
@@ -390,8 +390,13 @@ class GaussianModel:
         grads = self.xyz_gradient_accum / self.denom
         grads[grads.isnan()] = 0.0
 
-        self.densify_and_clone(grads, max_grad, extent)
-        self.densify_and_split(grads, max_grad, extent)
+        if kl_threshold is None:
+            self.densify_and_clone(grads, max_grad, extent)
+            self.densify_and_split(grads, max_grad, extent)
+        else:
+            self.kl_densify_and_clone(grads, max_grad, extent, kl_threshold)
+            self.kl_densify_and_split(grads, max_grad, extent, kl_threshold)
+            self.kl_merge(grads, max_grad, extent, kl_threshold/2)
 
         prune_mask = (self.get_opacity < min_opacity).squeeze()
         if max_screen_size:
@@ -401,6 +406,157 @@ class GaussianModel:
         self.prune_points(prune_mask)
 
         torch.cuda.empty_cache()
+
+
+    def kl_densify_and_clone(self, grads, grad_threshold, scene_extent, kl_threshold=0.4):
+        # Extract points that satisfy the gradient condition
+        selected_pts_mask = torch.where(torch.norm(grads, dim=-1) >= grad_threshold, True, False)
+        selected_pts_mask = torch.logical_and(selected_pts_mask,
+                                              torch.max(self.get_scaling, dim=1).values <= self.percent_dense*scene_extent)
+
+        kl_div, _ = self.calc_kl_div()
+        self.kl_selected_pts_mask = kl_div > kl_threshold
+
+        selected_pts_mask = selected_pts_mask & self.kl_selected_pts_mask
+
+        print("[kl clone]: ", (selected_pts_mask & self.kl_selected_pts_mask).sum().item())
+
+        stds = self.get_scaling[selected_pts_mask]
+        means =torch.zeros((stds.size(0), 3),device="cuda")
+        samples = torch.normal(mean=means, std=stds)
+        rots = build_rotation(self._rotation[selected_pts_mask])
+        new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[selected_pts_mask]
+        new_scaling = self.scaling_inverse_activation(self.get_scaling[selected_pts_mask])
+        new_rotation = self._rotation[selected_pts_mask]
+        new_features_dc = self._features_dc[selected_pts_mask]
+        new_features_rest = self._features_rest[selected_pts_mask]
+        new_opacity = self._opacity[selected_pts_mask]
+
+        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation)
+
+    def kl_densify_and_split(self, grads, grad_threshold, scene_extent, kl_threshold=0.4, N=2):
+        n_init_points = self.get_xyz.shape[0]
+        # Extract points that satisfy the gradient condition
+        padded_grad = torch.zeros((n_init_points), device="cuda")
+        padded_grad[:grads.shape[0]] = grads.squeeze()
+        selected_pts_mask = torch.where(padded_grad >= grad_threshold, True, False)
+        selected_pts_mask = torch.logical_and(selected_pts_mask,
+                                              torch.max(self.get_scaling, dim=1).values > self.percent_dense*scene_extent)
+
+        kl_div, _ = self.calc_kl_div()
+        self.kl_selected_pts_mask = kl_div > kl_threshold
+
+        selected_pts_mask = selected_pts_mask & self.kl_selected_pts_mask
+
+        print("[kl split]: ", (selected_pts_mask & self.kl_selected_pts_mask).sum().item())
+
+        stds = self.get_scaling[selected_pts_mask].repeat(N,1)
+        means =torch.zeros((stds.size(0), 3),device="cuda")
+        samples = torch.normal(mean=means, std=stds)
+        rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N,1,1)
+        new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[selected_pts_mask].repeat(N, 1)
+        new_scaling = self.scaling_inverse_activation(self.get_scaling[selected_pts_mask].repeat(N,1) / (0.8*N))
+        new_rotation = self._rotation[selected_pts_mask].repeat(N,1)
+        new_features_dc = self._features_dc[selected_pts_mask].repeat(N,1,1)
+        new_features_rest = self._features_rest[selected_pts_mask].repeat(N,1,1)
+        new_opacity = self._opacity[selected_pts_mask].repeat(N,1)
+
+        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation)
+
+        prune_filter = torch.cat((selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool)))
+        self.prune_points(prune_filter)
+
+    def kl_merge(self, grads, grad_threshold, scene_extent, kl_threshold=0.1):
+        n_init_points = self.get_xyz.shape[0]
+        # Extract points that satisfy the gradient condition
+        padded_grad = torch.zeros((n_init_points), device="cuda")
+        padded_grad[:grads.shape[0]] = grads.squeeze()
+        selected_pts_mask = torch.where(padded_grad >= grad_threshold, True, False)
+        selected_pts_mask = torch.logical_and(selected_pts_mask,
+                                              torch.max(self.get_scaling, dim=1).values <= self.percent_dense*scene_extent)
+
+        kl_div, point_ids = self.calc_kl_div()
+        self.kl_selected_pts_mask = kl_div < kl_threshold
+
+        selected_pts_mask = selected_pts_mask & self.kl_selected_pts_mask
+
+        print("[kl merge]: ", (selected_pts_mask & self.kl_selected_pts_mask).sum().item())
+
+        if selected_pts_mask.sum() >= 1:
+
+            selected_point_ids = point_ids[0][selected_pts_mask]
+            new_xyz = self.get_xyz[selected_point_ids].mean(1)
+            new_scaling = self.scaling_inverse_activation(self.get_scaling[selected_point_ids][:,0] / 0.8)
+            new_rotation = self._rotation[selected_point_ids][:,0]
+            new_features_dc = self._features_dc[selected_point_ids].mean(1)
+            new_features_rest = self._features_rest[selected_point_ids].mean(1)
+            new_opacity = self._opacity[selected_point_ids].mean(1)
+
+            self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation)
+
+            selected_pts_mask[selected_point_ids[:,1]] = True
+            # prune_filter = torch.cat((selected_pts_mask, torch.zeros(selected_pts_mask.sum(), device="cuda", dtype=bool)))
+            prune_filter = torch.cat((selected_pts_mask, torch.zeros(new_xyz.shape[0], device="cuda", dtype=bool)))
+            self.prune_points(prune_filter)
+
+
+    def calc_kl_div(self):
+
+        from submodules.pynanoflann import pynanoflann
+        kdtree = pynanoflann.KDTree(n_neighbors=2, metric='L2', radius=1e10)
+
+        pts_numpy = self._xyz.detach().cpu().numpy()
+        kdtree.fit(pts_numpy)
+
+        _, indices = kdtree.kneighbors(pts_numpy, n_neighbors=2, n_jobs=12)
+        indices = indices.astype(np.int64)
+
+        # первая точка из индекса knn. она-же - запрошенная, сама себе ближайшая (потому что расстояние 0 до самой себя)
+        idx_pt_itself = indices[:, 0]
+        xyz_0 = self._xyz[idx_pt_itself].detach()
+        rotation_0_q = self._rotation[idx_pt_itself].detach()
+        scaling_diag_0 = self.get_scaling[idx_pt_itself].detach()
+
+        # вторая точка из индекса knn. ближайшая к запрошенной.
+        idx_nn = indices[:, 1]
+        xyz_1 = self._xyz[idx_nn].detach()
+        rotation_1_q = self._rotation[idx_nn].detach()
+        scaling_diag_1 = self.get_scaling[idx_nn].detach()
+
+        kl_divergence = self.kl_div(xyz_0, rotation_0_q, scaling_diag_0,
+                                   xyz_1, rotation_1_q, scaling_diag_1)
+
+        t_idx = torch.from_numpy(indices[None, ...])
+        if self._xyz.device.type == "cuda":
+            t_idx = t_idx.cuda(self._xyz.device)
+        return kl_divergence, t_idx
+
+
+    def kl_div(self, mu_0, rotation_0_q, scaling_0_diag, mu_1, rotation_1_q, scaling_1_diag):
+
+        # claculate cov_0
+        rotation_0 = build_rotation(rotation_0_q)
+        scaling_0 = build_scaling(scaling_0_diag)
+        L_0 = rotation_0 @ scaling_0
+        cov_0 = L_0 @ L_0.transpose(1, 2)
+
+        # claculate inverse of cov_1
+        rotation_1 = build_rotation(rotation_1_q)
+        scaling_1_inv = build_scaling(1/scaling_1_diag)
+        L_1_inv = rotation_1 @ scaling_1_inv
+        cov_1_inv = L_1_inv @ L_1_inv.transpose(1, 2)
+
+        # difference of mu_1 and mu_0
+        mu_diff = mu_1 - mu_0
+
+        # calculate kl divergence
+        kl_div_0 = torch.vmap(torch.trace)(cov_1_inv @ cov_0)
+        kl_div_1 = mu_diff[:,None].matmul(cov_1_inv).matmul(mu_diff[..., None]).squeeze()
+        kl_div_2 = torch.log(torch.prod((scaling_1_diag/scaling_0_diag)**2, dim=1))
+        kl_div = 0.5 * (kl_div_0 + kl_div_1 + kl_div_2 - 3)
+        return kl_div
+
+
 
     def add_densification_stats(self, viewspace_point_tensor, update_filter):
         self.xyz_gradient_accum[update_filter] += torch.norm(viewspace_point_tensor.grad[update_filter,:2], dim=-1, keepdim=True)
