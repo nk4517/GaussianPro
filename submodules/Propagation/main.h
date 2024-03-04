@@ -6,6 +6,10 @@
 #include "opencv2/core/core.hpp"
 #include "opencv2/highgui/highgui.hpp"
 
+#ifdef _MSC_VER
+#define M_PI 3.14159265358979323846264338327950288f
+#endif
+
 // Includes CUDA
 #include <cuda_runtime.h>
 #include <cuda.h>

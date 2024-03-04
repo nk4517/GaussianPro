@@ -365,7 +365,7 @@ void StoreColorPlyFileBinaryPointCloud (const std::string &plyFilePath, const st
 
     //write data
 #pragma omp parallel for
-    for(size_t i = 0; i < pc.size(); i++) {
+    for(signed int i = 0; i < pc.size(); i++) {
         const PointList &p = pc[i];
         float3 X = p.coord;
         const float3 normal = p.normal;
