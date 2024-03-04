@@ -2,6 +2,10 @@
 #include "Propagation.h"
 #include <iostream>
 #include <sstream>
+#ifdef _MSC_VER
+// Windows mkdir
+#include <direct.h>
+#endif
 
 void GenerateSampleList(const std::string &dense_folder, std::vector<Problem> &problems)
 {
@@ -41,7 +45,11 @@ void ProcessProblem(const std::string &dense_folder, const Problem &problem, boo
     std::stringstream result_path;
     result_path << dense_folder << "/propagated_depth";
     std::string result_folder = result_path.str();
+#ifdef _MSC_VER
+    mkdir(result_folder.c_str());
+#else
     mkdir(result_folder.c_str(), 0777);
+#endif
     // std::cout << result_folder << std::endl;
 
     Propagation pro;
@@ -99,7 +107,8 @@ int main(int argc, char** argv)
     int patch_size = std::stoi(argv[4]);
 
     Problem problem;
-    ref_id >> problem.ref_image_id;
+//    ref_id >> problem.ref_image_id;
+    problem.ref_image_id = ref_id;
 
     std::stringstream ss(src_ids_str);
     std::string token;
