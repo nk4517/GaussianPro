@@ -511,6 +511,11 @@ class GaussianModel:
         _, indices = kdtree.kneighbors(pts_numpy, n_neighbors=2, n_jobs=12)
         indices = indices.astype(np.int64)
 
+        # # а вот тут надо убрать дублирование
+        # same_not_inverted = np.all(indices != np.vstack((np.max(indices, axis=1), np.min(indices, axis=1))).T, axis=1)
+        # indices = indices[same_not_inverted]
+        # to_append = same_not_inverted.shape[0] - np.count_nonzero(same_not_inverted)
+
         # первая точка из индекса knn. она-же - запрошенная, сама себе ближайшая (потому что расстояние 0 до самой себя)
         idx_pt_itself = indices[:, 0]
         xyz_0 = self._xyz[idx_pt_itself].detach()
@@ -529,6 +534,10 @@ class GaussianModel:
         t_idx = torch.from_numpy(indices[None, ...])
         if self._xyz.device.type == "cuda":
             t_idx = t_idx.cuda(self._xyz.device)
+
+        # kl_divergence = torch.cat([kl_divergence, torch.zeros(to_append, device=kl_divergence.device)], dim=0)
+        # t_idx = torch.cat([t_idx, torch.zeros(1, to_append, 2, dtype=t_idx.dtype, device=t_idx.device)], dim=1)
+
         return kl_divergence, t_idx
 
 

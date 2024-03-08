@@ -6,3 +6,5 @@ diff-gaussian-rasterization-w-depth.git
 submodules/KNN_CUDA
 submodules/Propagation/build
 submodules/pynanoflann
+output
+*.whl
