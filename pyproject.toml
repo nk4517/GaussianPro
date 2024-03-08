@@ -52,6 +52,7 @@ knn-cuda = {path = "submodules/KNN_CUDA/dist/KNN_CUDA-0.2-py3-none-any.whl"}
 pynanoflann = {path = "submodules/pynanoflann/dist/pynanoflann-0.0.8-cp311-cp311-win_amd64.whl"}
 pytorch3d = {path = "dist/pytorch3d-0.7.6-cp311-cp311-win_amd64.whl"}
 swig = "^4.2.1"
+tensorboard = "^2.16.2"
 
 [tool.poetry.group.dev.dependencies]
 wheel = "^0.42.0"
