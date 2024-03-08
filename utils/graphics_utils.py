@@ -396,7 +396,7 @@ def depth_propagation(viewpoint_cam, projected_depth, viewpoint_stack, src_idxs,
         write_cam_txt(os.path.join(cdata_camera_path, str(idx+1)+".txt"), src_K.detach().cpu().numpy(), src_w2c.detach().cpu().numpy(),
                                                                             [depth_min, (depth_max-depth_min)/192.0, 192.0, depth_max])
     # c++ api for depth propagation
-    propagation_command = './submodules/Propagation/Propagation ./cache 0 "1 2 3 4" ' + str(patch_size)
+    propagation_command = r'.\submodules\Propagation\build\Release\Propagation.exe ./cache 0 "1 2 3 4" ' + str(patch_size)
     os.system(propagation_command)
     
 def generate_edge_mask(propagated_depth, patch_size):
