@@ -53,6 +53,12 @@ pynanoflann = {path = "submodules/pynanoflann/dist/pynanoflann-0.0.8-cp311-cp311
 pytorch3d = {path = "dist/pytorch3d-0.7.6-cp311-cp311-win_amd64.whl"}
 swig = "^4.2.1"
 tensorboard = "^2.16.2"
+imgui = "^2.0.0"
+imgui-bundle = "^1.3.0"
+imagecodecs = "^2024.1.1"
+diff-gauss = {path = "X:/_ai/_demos/_gsplat/gaussian_viewer/gaussian-splatting/submodules/diff-gaussian-rasterization/dist/diff_gauss-1.0.5-cp311-cp311-win_amd64.whl"}
+pyglm = "^2.7.1"
+awscli = "^1.32.57"
 
 [tool.poetry.group.dev.dependencies]
 wheel = "^0.42.0"
