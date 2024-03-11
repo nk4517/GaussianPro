@@ -46,7 +46,7 @@ cupy-cuda12x = "^13.0.0"
 pyrr = "^0.10.3"
 glfw = "^2.7.0"
 pyopengl = "^3.1.7"
-pcpr = {path = "dist/pcpr/dist/pcpr-0.2-cp311-cp311-win_amd64.whl"}
+pcpr = {path = "dist/pcpr-0.2-cp311-cp311-win_amd64.whl"}
 diff-gaussian-rasterization = {path = "submodules/diff-gaussian-rasterization/dist/diff_gaussian_rasterization-0.0.0-cp311-cp311-win_amd64.whl"}
 knn-cuda = {path = "submodules/KNN_CUDA/dist/KNN_CUDA-0.2-py3-none-any.whl"}
 pynanoflann = {path = "submodules/pynanoflann/dist/pynanoflann-0.0.8-cp311-cp311-win_amd64.whl"}
@@ -59,6 +59,11 @@ imagecodecs = "^2024.1.1"
 diff-gauss = {path = "X:/_ai/_demos/_gsplat/gaussian_viewer/gaussian-splatting/submodules/diff-gaussian-rasterization/dist/diff_gauss-1.0.5-cp311-cp311-win_amd64.whl"}
 pyglm = "^2.7.1"
 awscli = "^1.32.57"
+imgviz = "^1.7.5"
+evo = "1.11.0"
+diff-gaussian-rasterization-rmurai0610 = {path = "dist/diff_gaussian_rasterization_rmurai0610-0.0.0-cp311-cp311-win_amd64.whl"}
+mypy = "^1.9.0"
+devtools = "^0.12.2"
 
 [tool.poetry.group.dev.dependencies]
 wheel = "^0.42.0"
